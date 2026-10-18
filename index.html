@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Suminagashi</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <div id="toolbar">
+      <div class="group" role="group" aria-label="Mode">
+        <button data-mode="water" title="Ink drifting in water (M)">Water</button>
+        <button data-mode="marble" title="Mathematical marbling (M)">Marble</button>
+      </div>
+      <div class="group" id="tools" role="group" aria-label="Marbling tool" hidden>
+        <button data-tool="drop" title="Drop ink — hold for a bigger drop (1)">Drop</button>
+        <button data-tool="tine" title="Drag a single stylus through the ink (2)">Tine</button>
+        <button data-tool="comb" title="Drag a comb of styluses through the ink (3)">Comb</button>
+        <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+      </div>
+      <button id="clear" title="Clear this mode's ink">Clear</button>
+      <button id="replay" title="Replay how this picture was made (R)">Replay</button>
+      <button id="style-toggle" aria-expanded="false" aria-controls="style" title="Palette, paper and feel">
+        <span class="dot" id="next-ink" aria-hidden="true"></span>Style
+      </button>
+      <button id="export-toggle" aria-expanded="false" aria-controls="export">Export</button>
+    </div>
+    <div id="style" class="panel" role="dialog" aria-label="Style" hidden>
+      <label>Preset <select id="style-preset"></select></label>
+      <label>Ink <select id="style-palette"></select></label>
+      <div class="swatches" id="style-colors" role="group" aria-label="Ink color"></div>
+      <div class="field">
+        <span>Paper</span>
+        <div class="seg" id="style-paper" role="group" aria-label="Paper"></div>
+      </div>
+      <div class="swatches" id="style-tones" role="group" aria-label="Paper tone"></div>
+      <div class="field">
+        <span>Symmetry</span>
+        <div class="seg" id="style-symmetry" role="group" aria-label="Symmetry"></div>
+      </div>
+      <div id="style-sliders"></div>
+      <input type="file" id="style-photo" accept="image/*" hidden />
+      <div class="row">
+        <p id="style-status" role="status" aria-live="polite"></p>
+        <button id="style-reset" class="secondary">Reset</button>
+      </div>
+    </div>
+    <div id="export" class="panel" role="dialog" aria-label="Export wallpaper" hidden>
+      <label>Size <select id="export-size"></select></label>
+      <label
+        >Framing
+        <select id="export-framing">
+          <option value="cover">Fill (crop to fit)</option>
+          <option value="contain">Fit (paper margins)</option>
+        </select>
+      </label>
+      <div class="row">
+        <button id="export-png">PNG</button>
+        <button id="export-svg">SVG</button>
+        <button id="export-video" title="Record 5 seconds of the live canvas">Video 5s</button>
+      </div>
+      <div class="row">
+        <button id="export-replay" title="Replay how the picture was made, recorded as a video">Replay video</button>
+      </div>
+      <p id="export-status" role="status" aria-live="polite"></p>
+    </div>
+    <div id="hint"></div>
+    <div id="error" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

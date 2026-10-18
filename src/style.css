@@ -1,0 +1,271 @@
+:root {
+  --paper: #f3ece0;
+  --ink: #2b2a33;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+#canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+#toolbar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  /* The bar spans the width; only the buttons should catch clicks, not the gaps around them. */
+  pointer-events: none;
+}
+
+#toolbar > * {
+  pointer-events: auto;
+}
+
+#toolbar .group {
+  display: flex;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+}
+
+#toolbar .group[hidden] {
+  display: none;
+}
+
+#toolbar button {
+  border: 0;
+  padding: 6px 14px;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+}
+
+#toolbar > button {
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+}
+
+#toolbar button:hover {
+  background: rgb(255 255 255 / 0.85);
+}
+
+#toolbar button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+#toolbar button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.panel {
+  position: fixed;
+  top: 56px; /* refined from the toolbar's height when opened */
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.88);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.12);
+}
+
+.panel[hidden],
+.panel [hidden] {
+  display: none;
+}
+
+.panel label,
+.panel .field {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel label.slider {
+  grid-template-columns: 70px 1fr 54px;
+}
+
+.panel output {
+  font-size: 12px;
+  text-align: right;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel input[type='range'] {
+  width: 100%;
+  accent-color: var(--ink);
+}
+
+.panel select {
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.panel .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel .row button {
+  flex: 1;
+  padding: 7px 0;
+  font: inherit;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.panel .row button.secondary {
+  flex: 0 0 auto;
+  padding: 5px 14px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid rgb(0 0 0 / 0.2);
+}
+
+.panel .row button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.panel [role='status'] {
+  flex: 1;
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 78px;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.15);
+  cursor: pointer;
+}
+
+.swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.chip,
+.seg button {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'],
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.seg {
+  display: flex;
+  gap: 4px;
+}
+
+.swatch:focus-visible,
+.chip:focus-visible,
+.seg button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+#style-toggle .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.8);
+}
+
+#hint {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+
+#hint.gone {
+  opacity: 0;
+}
+
+#error {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  background: var(--paper);
+}
+
+#error[hidden] {
+  display: none;
+}
