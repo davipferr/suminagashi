@@ -29,6 +29,38 @@ export interface PenParams {
   exitTaper: number;
   /** White-out: removes ink (back to paper) instead of adding it. */
   erase?: boolean;
+  /** A calligraphy brush or nib: drawn as simulated bristles with wet ink (see brush.ts), not a solid line. */
+  brush?: BrushParams;
+}
+
+/**
+ * How a calligraphy tool holds and lays down ink. The pen's `width` is the footprint's half-width (round) or
+ * the edge's half-length (chisel), in canvas heights.
+ */
+export interface BrushParams {
+  /**
+   * 'round': a pointed tuft (fude) — width follows pressure, the hairs trail behind on curves.
+   * 'chisel': a flat edge at a fixed angle (reed qalam, metal broad-edge) — width follows stroke direction.
+   */
+  shape: 'round' | 'chisel';
+  /** Number of simulated bristles (for a nib: slices of its edge). */
+  bristles: number;
+  /** Chisel: edge angle from the baseline, radians, rising to the right. */
+  angle: number;
+  /** Chisel: edge thickness as a fraction of its half-length (the hairline a stroke along the edge leaves). */
+  thickness: number;
+  /** Chisel: how much pressure lengthens the edge (tines spreading); 0 = rigid. */
+  flex: number;
+  /** Round: how far the bristles lag behind the brush on curves, in footprint radii (soft hair lags more). */
+  lag: number;
+  /** How much each bristle wanders across the stroke, in bristle spacings. */
+  wander: number;
+  /** Stroke length (canvas heights) a full load lasts at full pressure, before the brush runs dry. */
+  capacity: number;
+  /** Speed (canvas heights / s) at which a brush lays down half as much ink and starts skipping (飛白). */
+  dryBrushSpeed: number;
+  /** How far wet ink wicks into the paper, in footprint widths, after a quarter second of contact. */
+  bleed: number;
 }
 
 /**
@@ -71,13 +103,123 @@ export const WHITE_OUT: PenParams = {
   erase: true,
 };
 
-export type PenName = 'g' | 'maru' | 'white';
+const deg = Math.PI / 180;
 
-export const PENS: Record<PenName, PenParams> = { g: G_PEN, maru: MARU_PEN, white: WHITE_OUT };
+/**
+ * Sumi brush (筆, a medium round fude): soft, very pressure-sensitive hair that swells from a fine tip to a
+ * broad belly, trails on curves, soaks into the paper where it lingers and splits into dry streaks (飛白)
+ * when it moves fast or runs low. For kanji and kana.
+ */
+export const SUMI_BRUSH: PenParams = {
+  width: 0.03,
+  minRatio: 0.08,
+  pressureGamma: 1.3,
+  speedHalf: 3,
+  defaultPressure: 0.6,
+  entryTaper: 0.01,
+  exitTaper: 0.07,
+  brush: {
+    shape: 'round',
+    bristles: 48,
+    angle: 0,
+    thickness: 0,
+    flex: 0,
+    lag: 0.9,
+    wander: 0.35,
+    capacity: 1.6,
+    dryBrushSpeed: 1.2,
+    bleed: 0.3,
+  },
+};
+
+/**
+ * Qalam (قلم): a reed pen with an oblique cut, held at about 70° — horizontals come out broad, verticals
+ * narrower, dots are rhombi. Stiff, so pressure barely matters; a little fibrous where it runs dry. For Arabic.
+ */
+export const QALAM: PenParams = {
+  width: 0.011,
+  minRatio: 0.85,
+  pressureGamma: 1,
+  speedHalf: 50,
+  defaultPressure: 0.8,
+  entryTaper: 0.0015,
+  exitTaper: 0.004,
+  brush: {
+    shape: 'chisel',
+    bristles: 28,
+    angle: 70 * deg,
+    thickness: 0.07,
+    flex: 0.08,
+    lag: 0,
+    wander: 0.08,
+    capacity: 2.5,
+    dryBrushSpeed: 6,
+    bleed: 0.12,
+  },
+};
+
+/**
+ * Broad-edge nib: a flat metal nib held at about 40° — thick and thin strokes from direction alone, crisp
+ * hairlines, tines that spread a little under pressure. For Western hands (italic, foundational, blackletter).
+ */
+export const BROAD_EDGE: PenParams = {
+  width: 0.01,
+  minRatio: 0.9,
+  pressureGamma: 1,
+  speedHalf: 50,
+  defaultPressure: 0.8,
+  entryTaper: 0.001,
+  exitTaper: 0.003,
+  brush: {
+    shape: 'chisel',
+    bristles: 26,
+    angle: 40 * deg,
+    thickness: 0.05,
+    flex: 0.15,
+    lag: 0,
+    wander: 0.03,
+    capacity: 1.8,
+    dryBrushSpeed: 10,
+    bleed: 0.08,
+  },
+};
+
+export type PenName = 'g' | 'maru' | 'white' | 'sumi' | 'qalam' | 'broad';
+
+export const PENS: Record<PenName, PenParams> = {
+  g: G_PEN,
+  maru: MARU_PEN,
+  white: WHITE_OUT,
+  sumi: SUMI_BRUSH,
+  qalam: QALAM,
+  broad: BROAD_EDGE,
+};
 
 /** A pen with its width scaled (the Style panel's "Pen width"). */
 export function scaledPen(pen: PenParams, widthScale: number): PenParams {
   return { ...pen, width: pen.width * widthScale };
+}
+
+/** The Style panel's brush controls: ink load and bleed multipliers, and a nib angle offset in degrees. */
+export interface BrushTuning {
+  ink: number;
+  bleed: number;
+  angle: number;
+}
+
+/** A brush with the Style panel's tuning applied (pens without a brush come back unchanged). */
+export function tunedPen(pen: PenParams, t: BrushTuning): PenParams {
+  if (!pen.brush) return pen;
+  const b = pen.brush;
+  return {
+    ...pen,
+    brush: {
+      ...b,
+      capacity: b.capacity * t.ink,
+      bleed: b.bleed * t.bleed,
+      angle: b.shape === 'chisel' ? b.angle + t.angle * deg : b.angle,
+    },
+  };
 }
 
 /** A dense point along the finished stroke centre line, with its radius. */
@@ -85,6 +227,9 @@ export interface StrokePoint {
   x: number;
   y: number;
   r: number;
+  /** Time the pen passed here (seconds), and its smoothed speed (canvas heights / s); set by buildStroke. */
+  t?: number;
+  v?: number;
 }
 
 /** Ease 0 -> 1 (smoothstep). */
@@ -132,7 +277,7 @@ export function buildStroke(samples: readonly PenSample[], pen: PenParams, spaci
   for (let i = 1; i < n; i++) radii[i] = radii[i - 1] + 0.5 * (radii[i] - radii[i - 1]);
 
   // Dense centre line.
-  const pts: StrokePoint[] = [{ x: samples[0].x, y: samples[0].y, r: radii[0] }];
+  const pts: StrokePoint[] = [{ x: samples[0].x, y: samples[0].y, r: radii[0], t: samples[0].t, v: speeds[0] }];
   for (let i = 0; i < n - 1; i++) {
     const p0 = samples[Math.max(i - 1, 0)];
     const p1 = samples[i];
@@ -146,6 +291,8 @@ export function buildStroke(samples: readonly PenSample[], pen: PenParams, spaci
         x: catmullRom(p0.x, p1.x, p2.x, p3.x, u),
         y: catmullRom(p0.y, p1.y, p2.y, p3.y, u),
         r: radii[i] + (radii[i + 1] - radii[i]) * u,
+        t: p1.t + (p2.t - p1.t) * u,
+        v: speeds[i] + (speeds[i + 1] - speeds[i]) * u,
       });
     }
   }

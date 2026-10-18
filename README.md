@@ -22,8 +22,9 @@ the build work under any sub-path.
 **Controls** (toolbar at the top; `M` switches mode, each mode keeps its own picture):
 
 - **Water** — click to drop ink (it blooms open), drag to pour a stroke; shift-drag or right-drag to stir without ink.
-- **Ink** — manga line art: `1` G-pen, `2` Maru pen, `3` White-out. Draw with a pen (pressure) or mouse (speed);
-  `Ctrl+Z` undoes a stroke. Style → *Pen width* and *Stabilizer*.
+- **Ink** — line art and calligraphy: `1` G-pen, `2` Maru pen, `3` White-out, `4` Sumi brush (kanji), `5` Qalam
+  (Arabic), `6` Broad-edge nib (Western). Draw with a pen (pressure) or mouse (speed); `Ctrl+Z` undoes a stroke.
+  Style → *Pen width*, *Stabilizer*, and for brushes *Brush ink*, *Bleed* and *Nib angle*.
 - **Marble** — `1` Drop: click for a drop, hold for a bigger one (it keeps pushing older ink outward into rings).
   `2` Tine: drag a stylus through the ink. `3` Comb: drag seven styluses at once. `Ctrl+Z` undoes a whole gesture.
 
@@ -153,6 +154,30 @@ Result (Intel Iris Xe, 690×846 canvas, 10 full comb passes with fast pointer in
 - **Replay**: a time-lapse of the finished picture — strokes in order at their recorded speed (2×), pauses capped at
   0.25 s (`replay.ts`). It draws into a stand-in model, so the real drawing is never touched.
 
+### Calligraphy brushes (`src/ink/brush.ts`, `brush.vert`, `bristle.frag`, `bleed.frag`)
+
+A brush stroke is re-simulated from its recorded samples, seeded per stroke, in canvas units — so it comes out the
+same live, in a replay and in a 4K export. Undo, replay and export work unchanged.
+
+- **Bristles**: 26–48 points on the footprint. A round fude spreads them over a teardrop disc whose size follows
+  pressure; a chisel lines them up along an edge at a fixed angle, so width comes from stroke direction (qalam ~70°:
+  broad horizontals; broad-edge ~40°: broad verticals). Each hair follows its root through a damped spring (soft hair
+  trails and splays on curves) and wanders a little across the stroke. Each leaves a thin capsule track; a round
+  brush adds a solid "belly" track that fills between wet hairs (a pressed dot is a disc, not a ring of specks).
+- **Ink load**: each hair carries its own ink, drained by the distance it travels — more under pressure, less when
+  it skims fast. A dry hair skips along its length (1D noise per hair), drawing the long white streaks of dry brush
+  (*hihaku* 飛白); the shader then frays what's left on the paper's tooth, read from the same paper texture the
+  display uses, with grain stretched along the stroke. *Brush ink* scales the load.
+- **Paper absorption**: wet ink wicks past the footprint by a reach that grows with the square root of contact time
+  (Washburn's law), scaled by how wet the hairs still are: a quick stroke stays crisp, a slow one feathers, a rest
+  before lifting leaves a blot. Resting counts while the pen is down (`InkModel.hold` each frame) and is stored as
+  the stroke's `lift` time. `bleed.frag` draws the halo pale and fading outward, its edge shaped by the paper's
+  absorbency and coarse + fine noise, so it follows the sheet; the display's edge darkening gives it a tide line.
+  How far ink travels follows the paper preset (washi most, smooth least) and the *Bleed* slider. Nibs bleed from
+  each slice of their edge, so the halo keeps the nib's slanted ends.
+- **SVG**: the sumi brush exports its round outline, nibs the swept nib (convex hulls of consecutive nib rectangles,
+  all clockwise). Bristle texture and bleed are raster only, so use PNG for those.
+
 ### Style (`src/palettes.ts`, `src/settings.ts`, `src/ui/stylePanel.ts`)
 
 - **Presets** set palette + paper + tone + how the water moves in one go (Classic suminagashi, Ottoman ebru,
@@ -224,3 +249,4 @@ Dev console: `__dbg.drop(x, y, colorIndex)`, `__dbg.push(x, y, vx, vy)`, `__dbg.
 - [x] Extras: symmetry, bit-exact replay (+ replay video), GitHub Pages CI
 - [x] Ink mode, step 1: G-pen engine (coalesced input, 1-Euro stabilizer, pressure/speed/taper model, SDF capsules)
 - [x] Ink mode, step 2: Maru pen, white-out, Style sliders, hi-res PNG + vector SVG export, replay
+- [x] Calligraphy brushes: sumi fude, qalam, broad-edge (bristle physics, ink load and dry brush, paper bleed)

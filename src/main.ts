@@ -7,7 +7,7 @@ import { RasterBath } from './marbling/raster';
 import { InkModel, type InkStroke } from './ink/ink';
 import { inkReplayAt, inkTimeline, inkTimelineLength, type TimelineEntry } from './ink/replay';
 import { InkLayer } from './ink/layer';
-import { PENS, scaledPen, type PenName } from './ink/pen';
+import { PENS, scaledPen, tunedPen, type PenName } from './ink/pen';
 import { MarbleController, type MarbleTool } from './marbling/controller';
 import { Display, type Look } from './render/display';
 import { Exporter } from './export/exporter';
@@ -55,12 +55,14 @@ const MARBLE_REPLAY_MAX_GAP = 0.4;
 const WATER_LOG_LIMIT = 72_000;
 
 type Mode = 'water' | 'marble' | 'ink';
+/** Ink mode's number keys: three pens, then three calligraphy brushes. */
+const PEN_KEYS: readonly PenName[] = ['g', 'maru', 'white', 'sumi', 'qalam', 'broad'];
 const MODES: readonly Mode[] = ['water', 'marble', 'ink'];
 
 const HINTS: Record<Mode, string> = {
   water: 'drag to pour ink · shift-drag or right-drag to stir',
   marble: 'click or hold to drop ink · tine & comb drag through it · ctrl+z undo',
-  ink: 'draw with a pen or mouse · pressure and speed shape the line · ctrl+z undo',
+  ink: 'draw with a pen or mouse · pressure and speed shape the line · 4–6 calligraphy brushes · ctrl+z undo',
 };
 
 type Splat =
@@ -293,7 +295,7 @@ function start(): void {
     if (e.key === 'm') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
     else if (e.key === 'r') replayButton.click();
     else if (tools[e.key] && mode === 'marble') setTool(tools[e.key]);
-    else if (mode === 'ink' && ['1', '2', '3'].includes(e.key)) setPen((['g', 'maru', 'white'] as const)[+e.key - 1]);
+    else if (mode === 'ink' && /^[1-6]$/.test(e.key)) setPen(PEN_KEYS[+e.key - 1]);
   });
 
   // --- water history & replay state (declared before the first setMode/clear can touch them) ---
@@ -377,7 +379,10 @@ function start(): void {
     dragging = true;
     hint.classList.add('gone');
     if (mode === 'ink') {
-      if (e.button === 0) ink.begin(toMarble(e), e.timeStamp / 1000, pressureOf(e), scaledPen(PENS[pen], settings.inkWidth));
+      if (e.button === 0) {
+        const tuning = { ink: settings.brushInk, bleed: settings.brushBleed, angle: settings.nibAngle };
+        ink.begin(toMarble(e), e.timeStamp / 1000, pressureOf(e), tunedPen(scaledPen(PENS[pen], settings.inkWidth), tuning));
+      }
       return;
     }
     if (mode === 'marble') {
@@ -431,10 +436,10 @@ function start(): void {
     lastTime = e.timeStamp;
   });
 
-  const stop = () => {
+  const stop = (e: PointerEvent) => {
     dragging = false;
     marble.up();
-    ink.end();
+    ink.end(e.timeStamp / 1000);
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
@@ -579,7 +584,9 @@ function start(): void {
     if (replay) advanceReplay(dt);
     // Only the visible mode runs; the other one keeps its state, paused.
     if (mode === 'ink') {
-      inkLayer.sync(replay?.ink ? replay.ink.view : ink);
+      // A brush resting on the paper keeps soaking in. (Event timestamps share performance.now()'s clock.)
+      if (!replay) ink.hold(performance.now() / 1000);
+      inkLayer.sync(replay?.ink ? replay.ink.view : ink, displayPass.paperFor(look, size.height));
       display(inkLayer.dye);
     } else if (mode === 'water') {
       if (!replay) liveWater(dt);

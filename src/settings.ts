@@ -27,6 +27,12 @@ export interface Settings {
   inkWidth: number;
   /** Ink: stabilizer strength, 0 (raw) .. 1 (very steady). */
   inkStabilizer: number;
+  /** Ink brushes: how much ink a brush carries (multiplier; low = dry brush sooner). */
+  brushInk: number;
+  /** Ink brushes: how far wet ink bleeds into the paper (multiplier). */
+  brushBleed: number;
+  /** Ink brushes: qalam / broad-edge nib angle, degrees added to the tool's traditional angle. */
+  nibAngle: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -43,6 +49,9 @@ export const DEFAULT_SETTINGS: Settings = {
   symmetry: 'off',
   inkWidth: 1,
   inkStabilizer: 0.5,
+  brushInk: 1,
+  brushBleed: 1,
+  nibAngle: 0,
 };
 
 /** Slider ranges; also used to clamp whatever comes back from storage. */
@@ -54,6 +63,9 @@ export const RANGES = {
   combSpacing: { min: 0.02, max: 0.12, step: 0.005 },
   inkWidth: { min: 0.4, max: 3, step: 0.05 },
   inkStabilizer: { min: 0, max: 1, step: 0.05 },
+  brushInk: { min: 0.2, max: 2.5, step: 0.05 },
+  brushBleed: { min: 0, max: 2, step: 0.05 },
+  nibAngle: { min: -45, max: 45, step: 1 },
 } as const;
 
 const HEX = /^#[0-9a-f]{6}$/i;

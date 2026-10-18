@@ -2,6 +2,7 @@ import type { RGB } from '../color';
 import { toHex, type Region } from '../export/framing';
 import { buildStroke, type StrokePoint } from './pen';
 import type { InkStroke } from './ink';
+import { chiselEdge, chiselHalfLength, chiselSliceRadius } from './brush';
 
 /** Resampling for vector output, canvas heights (about 1.5 px on a 2000 px tall print). */
 const SVG_SPACING = 1 / 1400;
@@ -93,6 +94,52 @@ export function strokePath(stroke: InkStroke, spacing = SVG_SPACING): string {
   return parts.join('');
 }
 
+/** Convex hull (Andrew's monotone chain), wound clockwise on screen (y down), like every other subpath. */
+function hull(points: XY[]): XY[] {
+  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o: XY, a: XY, b: XY) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: XY[] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: XY[] = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p[i]) <= 0) upper.pop();
+    upper.push(p[i]);
+  }
+  // Counter-clockwise in y-up maths is clockwise on a y-down screen.
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/**
+ * A chisel (qalam, broad-edge) stroke: the nib is a thin rectangle at a fixed angle, so the stroke is the union
+ * of the convex hulls of consecutive nib positions — exact for a swept convex shape. Bristle texture and bleed
+ * are raster-only.
+ */
+export function chiselPath(stroke: InkStroke, spacing = SVG_SPACING): string {
+  const b = stroke.pen.brush;
+  if (!b) return '';
+  const pts = buildStroke(stroke.samples, stroke.pen, spacing, true);
+  const e = chiselEdge(b);
+  const corners = (p: StrokePoint): XY[] => {
+    const half = chiselHalfLength(stroke.pen, p.r / stroke.pen.width);
+    const t = chiselSliceRadius(b, half);
+    return [
+      [p.x + e.x * half - e.y * t, p.y + e.y * half + e.x * t],
+      [p.x + e.x * half + e.y * t, p.y + e.y * half - e.x * t],
+      [p.x - e.x * half - e.y * t, p.y - e.y * half + e.x * t],
+      [p.x - e.x * half + e.y * t, p.y - e.y * half - e.x * t],
+    ];
+  };
+  const parts: string[] = [];
+  const poly = (q: XY[]) => `M${q.map(([x, y]) => `${n(x)} ${n(y)}`).join('L')}Z`;
+  if (pts.length === 1) return poly(hull(corners(pts[0])));
+  for (let i = 0; i < pts.length - 1; i++) parts.push(poly(hull([...corners(pts[i]), ...corners(pts[i + 1])])));
+  return parts.join('');
+}
+
 /** Line art as SVG. Same framing conventions as the marbling SVG (marbling units, clipped to the picture). */
 export function inkToSvg(
   strokes: readonly InkStroke[],
@@ -107,7 +154,8 @@ export function inkToSvg(
   const vw = region.w * srcAspect;
   const vh = region.h;
   const paper = toHex(paperColor);
-  const paths = strokes.map((s) => `<path fill="${s.pen.erase ? paper : '#000000'}" d="${strokePath(s)}"/>`);
+  const outline = (s: InkStroke) => (s.pen.brush?.shape === 'chisel' ? chiselPath(s) : strokePath(s));
+  const paths = strokes.map((s) => `<path fill="${s.pen.erase ? paper : '#000000'}" d="${outline(s)}"/>`);
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${n(vx)} ${n(vy)} ${n(vw)} ${n(vh)}" preserveAspectRatio="none">`,
     `<defs><clipPath id="picture"><rect x="0" y="0" width="${n(srcAspect)}" height="1"/></clipPath></defs>`,

@@ -1,11 +1,16 @@
 import type { Point } from '../input/stroke';
 import { OneEuro2D } from './oneEuro';
 import { buildStroke, strokeSegments, type PenParams, type PenSample } from './pen';
+import { simulateBrush, type BrushMarks } from './brush';
 
 export interface InkStroke {
   readonly pen: PenParams;
   /** Stabilized samples; the finished line is rebuilt from these at any resolution (export). */
   readonly samples: PenSample[];
+  /** Brushes: seeds the bristles, so the stroke looks the same every time it's rebuilt. */
+  readonly seed?: number;
+  /** Brushes: when the brush left the paper (s). Resting before that soaks in as a blot. */
+  lift?: number;
 }
 
 /** Stabilizer strength 0..1 -> 1-Euro parameters. 0 = raw input, 1 = very steady (slow lines glide). */
@@ -42,6 +47,7 @@ export class InkModel {
     this.filter.reset();
     const f = this.filter.filter(p, t);
     this.current = { pen, samples: [{ ...f, t, pressure }] };
+    if (pen.brush) this.current = { ...this.current, seed: (Math.random() * 2 ** 32) >>> 0, lift: t };
     this.raw = [{ p, t }];
     this.liveVersion++;
   }
@@ -61,8 +67,22 @@ export class InkModel {
     this.liveVersion++;
   }
 
-  /** Lifts the pen: the line catches up with where the pen actually left the paper, then it's kept. */
-  end(): void {
+  /**
+   * The pen is still down at time t (called every frame while drawing). A brush resting in place keeps
+   * soaking ink into the paper, so its stroke changes even when no sample arrives.
+   */
+  hold(t: number): void {
+    const s = this.current;
+    if (!s?.pen.brush) return;
+    s.lift = Math.max(t, s.samples[s.samples.length - 1].t);
+    this.liveVersion++;
+  }
+
+  /**
+   * Lifts the pen (at time t, if known): the line catches up with where the pen actually left the paper,
+   * then it's kept.
+   */
+  end(t?: number): void {
     const s = this.current;
     if (!s) return;
     const raw = this.raw;
@@ -77,6 +97,7 @@ export class InkModel {
       const speed = travelled / Math.max(end.t - first.t, 1 / 240);
       s.samples.push({ ...end.p, t: last.t + gap / Math.max(speed, 0.02), pressure: last.pressure });
     }
+    if (s.pen.brush) s.lift = Math.max(t ?? s.lift ?? 0, s.samples[s.samples.length - 1].t);
     this.checkpoint();
     this.strokes = [...this.strokes, s];
     this.current = null;
@@ -123,4 +144,16 @@ export function segmentsFor(stroke: InkStroke, spacing: number, final: boolean):
   const segments = strokeSegments(buildStroke(stroke.samples, stroke.pen, spacing, true));
   cache.set(stroke, { spacing, segments });
   return segments;
+}
+
+/** Bristle tracks and bleed for a brush stroke, cached like segmentsFor. */
+const brushCache = new WeakMap<InkStroke, { spacing: number; marks: BrushMarks }>();
+
+export function brushMarksFor(stroke: InkStroke, spacing: number, final: boolean): BrushMarks {
+  if (!final) return simulateBrush(stroke, spacing, false);
+  const hit = brushCache.get(stroke);
+  if (hit && hit.spacing === spacing) return hit.marks;
+  const marks = simulateBrush(stroke, spacing, true);
+  brushCache.set(stroke, { spacing, marks });
+  return marks;
 }

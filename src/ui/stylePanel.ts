@@ -24,6 +24,9 @@ const SLIDERS: readonly SliderDef[] = [
   { key: 'combSpacing', label: 'Comb gap', modes: ['marble'], format: (v) => `${Math.round(v * 1000) / 10}%` },
   { key: 'inkWidth', label: 'Pen width', modes: ['ink'], format: pct },
   { key: 'inkStabilizer', label: 'Stabilizer', modes: ['ink'], format: pct },
+  { key: 'brushInk', label: 'Brush ink', modes: ['ink'], format: pct },
+  { key: 'brushBleed', label: 'Bleed', modes: ['ink'], format: pct },
+  { key: 'nibAngle', label: 'Nib angle', modes: ['ink'], format: (v) => `${v > 0 ? '+' : ''}${v}°` },
 ];
 
 const PAPER_LABELS: Record<PaperName, string> = { washi: 'Washi', cotton: 'Cotton', smooth: 'Smooth' };

@@ -20,7 +20,7 @@ export function inkTimeline(strokes: readonly InkStroke[]): TimelineEntry[] {
   let prevEnd: number | null = null;
   for (const s of strokes) {
     const first = s.samples[0].t;
-    const last = s.samples[s.samples.length - 1].t;
+    const last = Math.max(s.samples[s.samples.length - 1].t, s.lift ?? -Infinity);
     if (prevEnd !== null) clock += Math.min(Math.max(first - prevEnd, 0), MAX_GAP);
     out.push({ start: clock, duration: Math.max(last - first, 0) });
     clock += Math.max(last - first, 0);
@@ -46,7 +46,10 @@ export function inkReplayAt(
   const s = strokes[done];
   const t0 = s.samples[0].t;
   const visible = s.samples.filter((p) => p.t - t0 <= t - e.start);
-  return { done, partial: { pen: s.pen, samples: visible.length ? visible : [s.samples[0]] } };
+  const partial: InkStroke = { pen: s.pen, samples: visible.length ? visible : [s.samples[0]], seed: s.seed };
+  // A brush soaks in while it rests, so the replay keeps its clock running between samples too.
+  if (s.pen.brush) partial.lift = t0 + (t - e.start);
+  return { done, partial };
 }
 
 /** Total replay length, seconds. */

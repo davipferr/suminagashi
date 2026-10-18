@@ -87,7 +87,7 @@ export class Exporter {
         const layer = new InkLayer(gl, this.format, width, height);
         try {
           const view = { x: region.x * source.aspect, y: region.y, scale: height / region.h };
-          layer.renderStatic(source.strokes, view, source.aspect);
+          layer.renderStatic(source.strokes, view, this.display.paperFor(look, height), source.aspect);
           this.display.draw(layer.dye, out, look, { region: FULL_REGION });
         } finally {
           layer.dispose();

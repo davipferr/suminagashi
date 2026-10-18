@@ -27,6 +27,14 @@ export interface Surface {
   height: number;
 }
 
+/** The paper as brushes see it: its baked tile (a = absorbency) and how far wet ink wicks through it. */
+export interface InkPaper {
+  texture: RenderTarget;
+  /** Which sheet it is (the tile can be re-baked in place when the paper changes). */
+  kind: PaperName;
+  wick: number;
+}
+
 export const FULL_REGION: Region = { x: 0, y: 0, w: 1, h: 1 };
 
 /** Final pass: paper seen through the ink (see display.frag). */
@@ -40,6 +48,16 @@ export class Display {
   ) {
     this.program = new Program(gl, displayFrag, 'display.frag');
     this.paper = new Paper(gl, format);
+  }
+
+  /**
+   * The paper tile for an output of this height (baked on demand, shared with draw), for brushes to soak
+   * into. Absorbent washi lets ink travel furthest; sized smooth paper keeps it almost where it was laid.
+   */
+  paperFor(look: Look, height: number): InkPaper {
+    this.paper.ensure(look.paper, height);
+    const absorb = look.absorb ?? PAPERS[look.paper].absorb;
+    return { texture: this.paper.texture, kind: look.paper, wick: 0.3 + 2 * absorb };
   }
 
   draw(
