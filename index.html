@@ -11,12 +11,19 @@
       <div class="group" role="group" aria-label="Mode">
         <button data-mode="water" title="Ink drifting in water (M)">Water</button>
         <button data-mode="marble" title="Mathematical marbling (M)">Marble</button>
+        <button data-mode="ink" title="Manga line art with a G-pen (M)">Ink</button>
       </div>
       <div class="group" id="tools" role="group" aria-label="Marbling tool" hidden>
         <button data-tool="drop" title="Drop ink — hold for a bigger drop (1)">Drop</button>
         <button data-tool="tine" title="Drag a single stylus through the ink (2)">Tine</button>
         <button data-tool="comb" title="Drag a comb of styluses through the ink (3)">Comb</button>
         <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+      </div>
+      <div class="group" id="ink-tools" role="group" aria-label="Ink tools" hidden>
+        <button data-pen="g" title="G-pen: springy nib, strong pressure response, sharp tapers (1)">G-pen</button>
+        <button data-pen="maru" title="Maru pen: fine, stiff nib for detail (2)">Maru</button>
+        <button data-pen="white" title="White-out: paints the ink back off (3)">White-out</button>
+        <button id="ink-undo" title="Undo the last stroke (Ctrl+Z)">Undo</button>
       </div>
       <button id="clear" title="Clear this mode's ink">Clear</button>
       <button id="replay" title="Replay how this picture was made (R)">Replay</button>

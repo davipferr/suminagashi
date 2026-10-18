@@ -4,6 +4,10 @@ import { Fluid } from './sim/fluid';
 import { Marbling } from './marbling/marbling';
 import { MarbleLayer } from './marbling/layer';
 import { RasterBath } from './marbling/raster';
+import { InkModel, type InkStroke } from './ink/ink';
+import { inkReplayAt, inkTimeline, inkTimelineLength, type TimelineEntry } from './ink/replay';
+import { InkLayer } from './ink/layer';
+import { PENS, scaledPen, type PenName } from './ink/pen';
 import { MarbleController, type MarbleTool } from './marbling/controller';
 import { Display, type Look } from './render/display';
 import { Exporter } from './export/exporter';
@@ -43,16 +47,20 @@ const MAX_DT = 1 / 30;
 /** Replay speed: water sim frames per displayed frame; marbling time multiplier. */
 const WATER_REPLAY_SPEED = 4;
 const MARBLE_REPLAY_SPEED = 3;
+/** Line art replays at this multiple of the drawing speed. */
+const INK_REPLAY_SPEED = 2;
 /** Pauses longer than this (seconds) between marbling gestures are cut short in a replay. */
 const MARBLE_REPLAY_MAX_GAP = 0.4;
 /** Water history is kept for this many sim frames (~20 min at 60 fps); beyond it, replay is off until Clear. */
 const WATER_LOG_LIMIT = 72_000;
 
-type Mode = 'water' | 'marble';
+type Mode = 'water' | 'marble' | 'ink';
+const MODES: readonly Mode[] = ['water', 'marble', 'ink'];
 
 const HINTS: Record<Mode, string> = {
   water: 'drag to pour ink · shift-drag or right-drag to stir',
   marble: 'click or hold to drop ink · tine & comb drag through it · ctrl+z undo',
+  ink: 'draw with a pen or mouse · pressure and speed shape the line · ctrl+z undo',
 };
 
 type Splat =
@@ -81,6 +89,7 @@ interface WaterFrame {
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas')!;
 const hint = document.querySelector<HTMLDivElement>('#hint')!;
 const toolGroup = document.querySelector<HTMLDivElement>('#tools')!;
+const inkTools = document.querySelector<HTMLDivElement>('#ink-tools')!;
 
 function showError(message: string): void {
   const el = document.querySelector<HTMLDivElement>('#error')!;
@@ -120,6 +129,9 @@ function start(): void {
       })
     : null;
   marbling.raster = raster;
+  const ink = new InkModel();
+  let pen: PenName = 'g';
+  const inkLayer = new InkLayer(gl, format, size.width, size.height);
 
   function resize(): void {
     size = canvasPixels();
@@ -130,6 +142,7 @@ function start(): void {
     canvas.height = size.height;
     fluid.resize(size.width, size.height);
     marbleLayer.resize(size.width, size.height);
+    inkLayer.resize(size.width, size.height);
     marbling.aspect = size.width / size.height;
   }
   new ResizeObserver(resize).observe(canvas);
@@ -185,6 +198,7 @@ function start(): void {
     marble.settings.dropScale = settings.dropSize;
     marble.settings.combSpacing = settings.combSpacing;
     marble.settings.symmetry = settings.symmetry;
+    ink.setStabilizer(settings.inkStabilizer);
     nextInkDot.style.background = hex[peekColor()];
     saveSettings(settings);
   }
@@ -201,9 +215,17 @@ function start(): void {
       b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
     }
     toolGroup.hidden = mode !== 'marble';
+    inkTools.hidden = mode !== 'ink';
     stylePanel?.refresh();
     hint.textContent = HINTS[mode];
     hint.classList.remove('gone');
+  }
+
+  function setPen(next: PenName): void {
+    pen = next;
+    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-pen]')) {
+      b.setAttribute('aria-pressed', String(b.dataset.pen === next));
+    }
   }
 
   function setTool(next: MarbleTool): void {
@@ -224,6 +246,9 @@ function start(): void {
       waterLog.length = 0;
       waterLogFull = false;
       loggedFluid = '';
+    } else if (mode === 'ink') {
+      ink.cancel();
+      ink.clear();
     } else {
       marble.settle();
       marbling.clear();
@@ -231,7 +256,13 @@ function start(): void {
   }
 
   function undo(): void {
-    if (mode !== 'marble' || replay) return;
+    if (replay) return;
+    if (mode === 'ink') {
+      ink.cancel();
+      ink.undo();
+      return;
+    }
+    if (mode !== 'marble') return;
     marble.settle();
     marbling.undo();
   }
@@ -242,7 +273,11 @@ function start(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
     b.addEventListener('click', () => setTool(b.dataset.tool as MarbleTool));
   }
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-pen]')) {
+    b.addEventListener('click', () => setPen(b.dataset.pen as PenName));
+  }
   document.querySelector('#undo')!.addEventListener('click', undo);
+  document.querySelector('#ink-undo')!.addEventListener('click', undo);
   document.querySelector('#clear')!.addEventListener('click', clear);
   const replayButton = document.querySelector<HTMLButtonElement>('#replay')!;
   replayButton.addEventListener('click', () => (replay ? stopReplay() : void startReplay()));
@@ -255,9 +290,10 @@ function start(): void {
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const tools: Record<string, MarbleTool> = { '1': 'drop', '2': 'tine', '3': 'comb' };
-    if (e.key === 'm') setMode(mode === 'water' ? 'marble' : 'water');
+    if (e.key === 'm') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
     else if (e.key === 'r') replayButton.click();
     else if (tools[e.key] && mode === 'marble') setTool(tools[e.key]);
+    else if (mode === 'ink' && ['1', '2', '3'].includes(e.key)) setPen((['g', 'maru', 'white'] as const)[+e.key - 1]);
   });
 
   // --- water history & replay state (declared before the first setMode/clear can touch them) ---
@@ -272,11 +308,14 @@ function start(): void {
     /** Marbling replay clock. */
     t: number;
     marbleSnapshot: MarbleSnapshot | null;
+    /** Ink: what's being replayed, its timeline, and the stand-in model the layer draws meanwhile. */
+    ink?: { strokes: readonly InkStroke[]; timeline: TimelineEntry[]; view: InkModel; prefixes: (readonly InkStroke[])[] };
     done: () => void;
   } | null = null;
 
   setMode('water');
   setTool('drop');
+  setPen('g');
 
   // --- water input ---
   // Drag pours ink and pushes the water; shift-drag or right-drag only stirs.
@@ -313,7 +352,10 @@ function start(): void {
     return { x: (e.clientX - rect.left) / rect.width, y: 1 - (e.clientY - rect.top) / rect.height };
   }
 
-  /** Marbling coordinates: canvas heights, y down. */
+  /** Pen pressure, or null when the device has none (mouse, most touch screens). */
+  const pressureOf = (e: PointerEvent) => (e.pointerType === 'pen' ? Math.max(e.pressure, 0.01) : null);
+
+  /** Marbling (and ink) coordinates: canvas heights, y down. */
   function toMarble(e: PointerEvent): Point {
     const rect = canvas.getBoundingClientRect();
     return { x: (e.clientX - rect.left) / rect.height, y: (e.clientY - rect.top) / rect.height };
@@ -326,9 +368,18 @@ function start(): void {
       stopReplay();
       return;
     }
-    canvas.setPointerCapture(e.pointerId);
+    // Capture can be refused (e.g. the pointer is already gone); drawing works without it.
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* keep going */
+    }
     dragging = true;
     hint.classList.add('gone');
+    if (mode === 'ink') {
+      if (e.button === 0) ink.begin(toMarble(e), e.timeStamp / 1000, pressureOf(e), scaledPen(PENS[pen], settings.inkWidth));
+      return;
+    }
     if (mode === 'marble') {
       marble.down(toMarble(e));
       return;
@@ -345,6 +396,14 @@ function start(): void {
 
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
+    if (mode === 'ink') {
+      // A pen reports far more samples than frames (often 240 Hz); the browser coalesces them into one
+      // event per frame. Use all of them, or quick flicks come out as polylines.
+      // Some browsers (and synthetic events) give an empty list: then the event itself is the only sample.
+      const coalesced = e.getCoalescedEvents?.() ?? [];
+      for (const c of coalesced.length ? coalesced : [e]) ink.add(toMarble(c), c.timeStamp / 1000, pressureOf(c));
+      return;
+    }
     if (mode === 'marble') {
       marble.move(toMarble(e));
       return;
@@ -375,6 +434,7 @@ function start(): void {
   const stop = () => {
     dragging = false;
     marble.up();
+    ink.end();
   };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
@@ -426,7 +486,11 @@ function start(): void {
 
   // --- replay: rebuild the current mode's picture from blank, as a time-lapse ---
   const canReplay = () =>
-    mode === 'water' ? !waterLogFull && waterLog.some((f) => f.splats || f.blooms) : marbling.log.length > 0;
+    mode === 'ink'
+      ? ink.strokes.length > 0
+      : mode === 'water'
+        ? !waterLogFull && waterLog.some((f) => f.splats || f.blooms)
+        : marbling.log.length > 0;
 
   /** Starts a replay of the current mode; resolves when it ends (finished or stopped). */
   function startReplay(): Promise<void> | null {
@@ -436,7 +500,14 @@ function start(): void {
     dragging = false;
     let done!: () => void;
     const finished = new Promise<void>((r) => (done = r));
-    if (mode === 'water') {
+    if (mode === 'ink') {
+      // The drawing itself is untouched: the replay draws a stand-in model that grows stroke by stroke.
+      ink.cancel();
+      const strokes = ink.strokes;
+      const prefixes: (readonly InkStroke[])[] = strokes.map((_, i) => strokes.slice(0, i));
+      prefixes.push(strokes);
+      replay = { mode, index: 0, t: 0, marbleSnapshot: null, done, ink: { strokes, timeline: inkTimeline(strokes), view: new InkModel(), prefixes } };
+    } else if (mode === 'water') {
       fluid.snapshot();
       fluid.clear();
       pending.length = 0;
@@ -460,7 +531,9 @@ function start(): void {
     const r = replay;
     if (!r) return;
     replay = null;
-    if (r.mode === 'water') {
+    if (r.mode === 'ink') {
+      // Nothing to restore: the real drawing was never touched; the layer re-syncs to it next frame.
+    } else if (r.mode === 'water') {
       fluid.restoreSnapshot();
       blooms.length = 0;
       // The log may have switched fluid settings; go back to the current ones.
@@ -478,6 +551,17 @@ function start(): void {
 
   function advanceReplay(dt: number): void {
     const r = replay!;
+    if (r.mode === 'ink' && r.ink) {
+      const { strokes, timeline, view, prefixes } = r.ink;
+      r.t += dt * INK_REPLAY_SPEED;
+      const at = inkReplayAt(strokes, timeline, r.t);
+      // Reuse the same prefix arrays, so the layer only draws strokes as they're finished.
+      view.strokes = prefixes[at.done];
+      view.current = at.partial;
+      view.liveVersion++;
+      if (r.t >= inkTimelineLength(timeline) + 0.3) stopReplay();
+      return;
+    }
     if (r.mode === 'water') {
       for (let k = 0; k < WATER_REPLAY_SPEED && r.index < waterLog.length; k++) stepWater(waterLog[r.index++]);
       if (r.index >= waterLog.length) stopReplay();
@@ -494,7 +578,10 @@ function start(): void {
   function tick(dt: number): void {
     if (replay) advanceReplay(dt);
     // Only the visible mode runs; the other one keeps its state, paused.
-    if (mode === 'water') {
+    if (mode === 'ink') {
+      inkLayer.sync(replay?.ink ? replay.ink.view : ink);
+      display(inkLayer.dye);
+    } else if (mode === 'water') {
       if (!replay) liveWater(dt);
       display(fluid.dye);
     } else {
@@ -527,7 +614,9 @@ function start(): void {
     screenSize: () => size,
     replay: startReplay,
     source: () =>
-      mode === 'water'
+      mode === 'ink'
+        ? (ink.end(), { kind: 'ink', strokes: ink.strokes, aspect: size.width / size.height })
+        : mode === 'water'
         ? { kind: 'water', dye: fluid.dye, aspect: size.width / size.height }
         : (marble.settle(), { kind: 'marble', shapes: marbling.shapes, aspect: size.width / size.height, raster }),
     vectorOk: () => !marbling.rasterized,
@@ -549,6 +638,7 @@ function start(): void {
         fluid,
         marbling,
         raster,
+        ink,
         marble,
         look,
         settings,

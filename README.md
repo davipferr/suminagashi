@@ -22,6 +22,8 @@ the build work under any sub-path.
 **Controls** (toolbar at the top; `M` switches mode, each mode keeps its own picture):
 
 - **Water** — click to drop ink (it blooms open), drag to pour a stroke; shift-drag or right-drag to stir without ink.
+- **Ink** — manga line art: `1` G-pen, `2` Maru pen, `3` White-out. Draw with a pen (pressure) or mouse (speed);
+  `Ctrl+Z` undoes a stroke. Style → *Pen width* and *Stabilizer*.
 - **Marble** — `1` Drop: click for a drop, hold for a bigger one (it keeps pushing older ink outward into rings).
   `2` Tine: drag a stylus through the ink. `3` Comb: drag seven styluses at once. `Ctrl+Z` undoes a whole gesture.
 
@@ -125,6 +127,32 @@ used to freeze the page (`pointermove` / `requestAnimationFrame` handlers of 0.5
 Result (Intel Iris Xe, 690×846 canvas, 10 full comb passes with fast pointer input): `pointermove` < 1 ms, frames
 ~0–20 ms CPU, one ~100–200 ms hitch at the moment of flattening.
 
+### Ink (`src/ink/`) — G-pen line art
+
+- **Input**: every pen sample via `getCoalescedEvents()` (often 240 Hz; one event per frame would turn flicks into
+  polylines), pressure from pens only — mouse and touch get width from speed alone.
+- **Stabilizer**: 1-Euro filter (`oneEuro.ts`). Its cutoff rises with speed, so slow careful lines lose hand tremor
+  (±1.7 px jitter → 0.3 px) while quick hatching barely lags (< 5 ms). On lift-off the line catches up to where the
+  pen actually left the paper, timed at the pen's real speed.
+- **Pen model** (`pen.ts`): width from a pressure curve (light touches stay thin), thinned by speed; radius
+  low-passed so pressure jitter doesn't wobble the edge; Catmull-Rom between samples, resampled every 1.5 px; entry
+  taper; exit taper scaled by lift-off speed — a flick ends in a needle (*nuki*), a stop ends round.
+- **Rendering** (`layer.ts`, `capsule.*`): each segment is an instanced quad cut to a tapered capsule (two circles +
+  tangents) by its exact signed distance, 1-px antialiased, combined with MAX blending. Unlike a triangle-strip ribbon
+  there are no normals to fold into bow-ties on sharp turns, and overlaps never darken twice. Finished strokes are
+  baked once; only the stroke in progress is redrawn per frame. Ink is pure black in the shared paper display.
+- **Pens** (`pen.ts`): *G-pen* (springy, wide range, long flick tails), *Maru* (fine, stiff, narrow range, short
+  tapers), *White-out* (broad, even; takes ink off). White-out writes `1 − coverage` with MIN blending — the mirror of
+  the ink's MAX — so it never "over-erases"; while it's being drawn it's merged with MIN in `inkDye.frag`.
+- **Export**: PNG re-renders every stroke from its samples at the export resolution (crisp at 4K, not an upscale).
+  SVG writes one path per stroke: the outline is the envelope of the moving circle,
+  `p + r·(−r′·u ± √(1−r′²)·n)`, as quads that share their edges (no seams), plus circles only at the caps, real
+  bends, steep tapers and would-be bow-ties. All clockwise, so nonzero fill = the union. Checked against the GPU's
+  exact capsules at 2560×1440: within 0.7 % / 1.4 % (missing / extra — antialiasing differences at hairlines).
+  White-out is painted in the paper color.
+- **Replay**: a time-lapse of the finished picture — strokes in order at their recorded speed (2×), pauses capped at
+  0.25 s (`replay.ts`). It draws into a stand-in model, so the real drawing is never touched.
+
 ### Style (`src/palettes.ts`, `src/settings.ts`, `src/ui/stylePanel.ts`)
 
 - **Presets** set palette + paper + tone + how the water moves in one go (Classic suminagashi, Ottoman ebru,
@@ -194,3 +222,5 @@ Dev console: `__dbg.drop(x, y, colorIndex)`, `__dbg.push(x, y, vx, vy)`, `__dbg.
 - [x] Wallpaper export (hi-res PNG, SVG, WebM; fill/fit framing)
 - [x] Palettes, presets, UI (Style panel, photo palettes, paper tones, persisted settings)
 - [x] Extras: symmetry, bit-exact replay (+ replay video), GitHub Pages CI
+- [x] Ink mode, step 1: G-pen engine (coalesced input, 1-Euro stabilizer, pressure/speed/taper model, SDF capsules)
+- [x] Ink mode, step 2: Maru pen, white-out, Style sliders, hi-res PNG + vector SVG export, replay

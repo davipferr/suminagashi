@@ -48,7 +48,7 @@ export function framingRegion(srcAspect: number, dstAspect: number, framing: Fra
   return { x: (1 - relWidth) / 2, y: 0, w: relWidth, h: 1 };
 }
 
-const toHex = (c: readonly number[]) =>
+export const toHex = (c: readonly number[]) =>
   '#' + c.map((v) => Math.round(Math.min(Math.max(v, 0), 1) * 255).toString(16).padStart(2, '0')).join('');
 
 /**

@@ -4,22 +4,26 @@ import { SYMMETRIES } from '../input/symmetry';
 import { DEFAULT_SETTINGS, RANGES, paletteColors, type Settings } from '../settings';
 import { popover } from './popover';
 
-type Mode = 'water' | 'marble';
+type Mode = 'water' | 'marble' | 'ink';
 
 interface SliderDef {
   key: keyof typeof RANGES;
   label: string;
-  /** Only shown in this mode. */
-  mode?: Mode;
+  /** Only shown in these modes. */
+  modes: readonly Mode[];
   format: (v: number) => string;
 }
 
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
 const SLIDERS: readonly SliderDef[] = [
-  { key: 'dropSize', label: 'Drop size', format: (v) => `${Math.round(v * 100)}%` },
-  { key: 'edge', label: 'Ink rim', format: (v) => `${Math.round(v * 100)}%` },
-  { key: 'swirl', label: 'Swirl', mode: 'water', format: (v) => String(v) },
-  { key: 'glide', label: 'Glide', mode: 'water', format: (v) => `${Math.round(v * 100)}%/s` },
-  { key: 'combSpacing', label: 'Comb gap', mode: 'marble', format: (v) => `${Math.round(v * 1000) / 10}%` },
+  { key: 'dropSize', label: 'Drop size', modes: ['water', 'marble'], format: pct },
+  { key: 'edge', label: 'Ink rim', modes: ['water', 'marble'], format: pct },
+  { key: 'swirl', label: 'Swirl', modes: ['water'], format: (v) => String(v) },
+  { key: 'glide', label: 'Glide', modes: ['water'], format: (v) => `${Math.round(v * 100)}%/s` },
+  { key: 'combSpacing', label: 'Comb gap', modes: ['marble'], format: (v) => `${Math.round(v * 1000) / 10}%` },
+  { key: 'inkWidth', label: 'Pen width', modes: ['ink'], format: pct },
+  { key: 'inkStabilizer', label: 'Stabilizer', modes: ['ink'], format: pct },
 ];
 
 const PAPER_LABELS: Record<PaperName, string> = { washi: 'Washi', cotton: 'Cotton', smooth: 'Smooth' };
@@ -197,7 +201,7 @@ export function setupStylePanel(o: Options): { refresh: () => void } {
     for (const { def, input, output, row } of sliders) {
       input.value = String(s[def.key]);
       output.textContent = def.format(s[def.key]);
-      row.hidden = def.mode !== undefined && def.mode !== mode;
+      row.hidden = !def.modes.includes(mode);
     }
   }
 

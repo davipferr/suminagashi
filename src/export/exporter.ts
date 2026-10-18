@@ -2,6 +2,9 @@ import type { TargetFormat } from '../gl/context';
 import { RenderTarget } from '../gl/target';
 import { MarbleLayer } from '../marbling/layer';
 import type { RasterBath } from '../marbling/raster';
+import { InkLayer } from '../ink/layer';
+import type { InkStroke } from '../ink/ink';
+import { inkToSvg } from '../ink/svg';
 import type { Shape } from '../marbling/marbling';
 import { FULL_REGION, type Display, type Look } from '../render/display';
 import type { RGB } from '../color';
@@ -10,7 +13,8 @@ import { framingRegion, marblingToSvg, type Framing } from './framing';
 /** What to export: the water's dye field, or the marbling polygons (re-rasterized sharp at the export size). */
 export type ExportSource =
   | { kind: 'water'; dye: RenderTarget; aspect: number }
-  | { kind: 'marble'; shapes: readonly Shape[]; aspect: number; raster: RasterBath | null };
+  | { kind: 'marble'; shapes: readonly Shape[]; aspect: number; raster: RasterBath | null }
+  | { kind: 'ink'; strokes: readonly InkStroke[]; aspect: number };
 
 /** Lets the page repaint (status text) before a long synchronous render. Not rAF: that stalls in hidden tabs. */
 const yieldToBrowser = () => new Promise<void>((r) => setTimeout(r, 0));
@@ -58,6 +62,12 @@ export class Exporter {
     return blob;
   }
 
+  /** Line art as vector paths (pure black on a flat paper color). */
+  inkSvg(strokes: readonly InkStroke[], aspect: number, width: number, height: number, framing: Framing, paper: RGB): Blob {
+    const region = framingRegion(aspect, width / height, framing);
+    return new Blob([inkToSvg(strokes, aspect, region, width, height, paper)], { type: 'image/svg+xml' });
+  }
+
   /** The marbling as vector paths (flat colors, no paper texture). */
   svg(shapes: readonly Shape[], aspect: number, width: number, height: number, framing: Framing, paper: RGB): Blob {
     const region = framingRegion(aspect, width / height, framing);
@@ -72,6 +82,16 @@ export class Exporter {
     try {
       if (source.kind === 'water') {
         this.display.draw(source.dye, out, look, { region });
+      } else if (source.kind === 'ink') {
+        // Re-draw the strokes from their samples at the export size: crisp at 4K, not an upscaled screen.
+        const layer = new InkLayer(gl, this.format, width, height);
+        try {
+          const view = { x: region.x * source.aspect, y: region.y, scale: height / region.h };
+          layer.renderStatic(source.strokes, view, source.aspect);
+          this.display.draw(layer.dye, out, look, { region: FULL_REGION });
+        } finally {
+          layer.dispose();
+        }
       } else {
         // Re-rasterize the polygons at the export size so edges stay crisp, framed in the layer itself.
         const layer = new MarbleLayer(gl, this.format, width, height);

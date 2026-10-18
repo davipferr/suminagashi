@@ -23,6 +23,10 @@ export interface Settings {
   combSpacing: number;
   /** Both modes: repeat every gesture mirrored or rotated around the center. */
   symmetry: Symmetry;
+  /** Ink: pen width multiplier. */
+  inkWidth: number;
+  /** Ink: stabilizer strength, 0 (raw) .. 1 (very steady). */
+  inkStabilizer: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +41,8 @@ export const DEFAULT_SETTINGS: Settings = {
   glide: 0.75,
   combSpacing: 0.05,
   symmetry: 'off',
+  inkWidth: 1,
+  inkStabilizer: 0.5,
 };
 
 /** Slider ranges; also used to clamp whatever comes back from storage. */
@@ -46,6 +52,8 @@ export const RANGES = {
   swirl: { min: 0, max: 30, step: 1 },
   glide: { min: 0.3, max: 0.95, step: 0.01 },
   combSpacing: { min: 0.02, max: 0.12, step: 0.005 },
+  inkWidth: { min: 0.4, max: 3, step: 0.05 },
+  inkStabilizer: { min: 0, max: 1, step: 0.05 },
 } as const;
 
 const HEX = /^#[0-9a-f]{6}$/i;

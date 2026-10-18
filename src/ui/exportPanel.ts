@@ -9,7 +9,7 @@ interface Options {
   exporter: Exporter;
   canvas: HTMLCanvasElement;
   look: Look;
-  mode: () => 'water' | 'marble';
+  mode: () => 'water' | 'marble' | 'ink';
   screenSize: () => { width: number; height: number };
   /** The current picture (settles any drop that is still spreading). */
   source: () => ExportSource;
@@ -41,14 +41,17 @@ export function setupExportPanel(o: Options): void {
 
   /** SVG only exists for marbling (the water is a field, not shapes). */
   function refresh(): void {
-    const marble = o.mode() === 'marble';
-    const vector = marble && o.vectorOk();
+    const mode = o.mode();
+    const vector = (mode === 'marble' && o.vectorOk()) || mode === 'ink';
     svgButton.disabled = !vector;
-    svgButton.title = !marble
-      ? 'Only in Marble mode'
-      : vector
-        ? 'Vector paths, flat colors'
-        : 'This picture got too detailed for vector paths (it was combed into pixel-fine lines); use PNG';
+    svgButton.title =
+      mode === 'water'
+        ? 'Water is a field, not shapes: use PNG'
+        : vector
+          ? mode === 'ink'
+            ? 'Vector line art: every stroke as a path'
+            : 'Vector paths, flat colors'
+          : 'This picture got too detailed for vector paths (it was combed into pixel-fine lines); use PNG';
   }
 
   popover(toggle, panel, () => {
@@ -86,9 +89,12 @@ export function setupExportPanel(o: Options): void {
     const { width, height } = chosenSize();
     void run('Writing SVG…', async () => {
       const src = o.source();
-      if (src.kind !== 'marble') return;
-      const blob = o.exporter.svg(src.shapes, src.aspect, width, height, framingSelect.value as Framing, o.look.paperColor);
-      download(blob, exportFilename('marble', width, height, 'svg'));
+      const framing = framingSelect.value as Framing;
+      let blob: Blob;
+      if (src.kind === 'marble') blob = o.exporter.svg(src.shapes, src.aspect, width, height, framing, o.look.paperColor);
+      else if (src.kind === 'ink') blob = o.exporter.inkSvg(src.strokes, src.aspect, width, height, framing, o.look.paperColor);
+      else return;
+      download(blob, exportFilename(src.kind, width, height, 'svg'));
       status.textContent = `Saved SVG (${(blob.size / 1e6).toFixed(1)} MB).`;
     });
   });
